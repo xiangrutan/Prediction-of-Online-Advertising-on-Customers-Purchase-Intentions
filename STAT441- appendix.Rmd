@@ -1,0 +1,403 @@
+---
+title: "Appendix"
+output: pdf_document
+---
+# R code and outputs
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(include = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r}
+library(pROC) # ROC
+library(caret)
+library(glmnet) # LASSO and Ridge
+library(MVN) # multivariateQQPlot
+library(car) # univariateQQPlot
+library(MASS) # lda, qda
+library(e1071) # Naive Bayes
+library(class) # knn
+library(tree) # tree
+library(randomForest) # bagging and Random Forest
+library(gbm) # Boosting
+library(huxtable)
+library(tidyverse)
+```
+
+```{r}
+draw_confusion_matrix <- function(cm) {
+
+  layout(matrix(c(1,1,2)))
+  par(mar=c(2,2,2,2))
+  plot(c(100, 345), c(300, 450), type = "n", xlab="", ylab="", xaxt='n', yaxt='n')
+  title('CONFUSION MATRIX', cex.main=2)
+
+  # create the matrix 
+  rect(150, 430, 240, 370, col='#3F97D0')
+  text(195, 435, 'Not Purchased', cex=1.2)
+  rect(250, 430, 340, 370, col='#F7AD50')
+  text(295, 435, 'Purchased', cex=1.2)
+  text(125, 370, 'Predicted', cex=1.3, srt=90, font=2)
+  text(245, 450, 'Actual', cex=1.3, font=2)
+  rect(150, 305, 240, 365, col='#F7AD50')
+  rect(250, 305, 340, 365, col='#3F97D0')
+  text(140, 400, 'Not Purchased', cex=1.2, srt=90)
+  text(140, 335, 'Purchased', cex=1.2, srt=90)
+
+  # add in the cm results 
+  res <- as.numeric(cm$table)
+  text(195, 400, res[1], cex=1.6, font=2, col='white')
+  text(195, 335, res[2], cex=1.6, font=2, col='white')
+  text(295, 400, res[3], cex=1.6, font=2, col='white')
+  text(295, 335, res[4], cex=1.6, font=2, col='white')
+
+  # add in the specifics 
+  plot(c(100, 0), c(100, 0), type = "n", xlab="", ylab="", main = "DETAILS", xaxt='n', yaxt='n')
+  text(10, 85, names(cm$byClass[1]), cex=1.2, font=2)
+  text(10, 70, round(as.numeric(cm$byClass[1]), 3), cex=1.2)
+  text(30, 85, names(cm$byClass[2]), cex=1.2, font=2)
+  text(30, 70, round(as.numeric(cm$byClass[2]), 3), cex=1.2)
+  text(50, 85, names(cm$byClass[5]), cex=1.2, font=2)
+  text(50, 70, round(as.numeric(cm$byClass[5]), 3), cex=1.2)
+  text(70, 85, names(cm$byClass[6]), cex=1.2, font=2)
+  text(70, 70, round(as.numeric(cm$byClass[6]), 3), cex=1.2)
+  text(90, 85, names(cm$byClass[7]), cex=1.2, font=2)
+  text(90, 70, round(as.numeric(cm$byClass[7]), 3), cex=1.2)
+
+  # add in the accuracy information 
+  text(30, 35, names(cm$overall[1]), cex=1.5, font=2)
+  text(30, 20, round(as.numeric(cm$overall[1]), 3), cex=1.4)
+  text(70, 35, names(cm$overall[2]), cex=1.5, font=2)
+  text(70, 20, round(as.numeric(cm$overall[2]), 3), cex=1.4)
+}  
+```
+
+```{r}
+socialnetwork <- read.csv("Social_Network_Ads.csv")
+```
+
+```{r}
+set.seed(1)
+socialnetwork$Gender <- ifelse(socialnetwork$Gender=="Female",0,1)
+socialnetwork <- socialnetwork[,-1]
+train.i <- sample(dim(socialnetwork)[1],320)
+```
+
+```{r}
+mean_gender <- mean(socialnetwork$Gender)
+mean_purchased <-mean(socialnetwork$Purchased)
+knitr:::kable(summary(socialnetwork)[,c(-1,-4)])
+print(c(mean_gender,mean_purchased))
+```
+
+```{r, include=T, warning=F, message=F,out.height="65%", out.width="65%", fig.align='center'}
+glm1 <- glm(Purchased~., data = socialnetwork,subset=train.i, family = "binomial")
+glm1pre <- exp(predict(glm1,newdata=socialnetwork[-train.i,1:3]))
+
+glm2 <- glm(Purchased~Age+EstimatedSalary, data = socialnetwork,subset=train.i, family = "binomial")
+glm2pre <- exp(predict(glm2,newdata=socialnetwork[-train.i,1:3]))
+huxreg(glm1, glm2) %>%
+  set_tb_padding(0) 
+pre1 <- ifelse(glm1pre >= 1, 1, 0)
+pre2 <- ifelse(glm2pre >= 1, 1, 0)
+```
+
+
+```{r,include=T,out.height="30%", out.width="65%", fig.align='center'}
+draw_confusion_matrix(confusionMatrix(factor(pre1), factor(socialnetwork$Purchased[-train.i])))
+```
+
+
+```{r,include=T,out.height="30%", out.width="65%", fig.align='center'}
+draw_confusion_matrix(confusionMatrix(factor(pre2), factor(socialnetwork$Purchased[-train.i])))
+```
+
+
+```{r,message=FALSE,include=TRUE,out.height="65%", out.width="65%", fig.align='center'}
+par(mfrow=c(1,2))
+plot.roc(socialnetwork$Purchased[-train.i], glm1pre, print.auc= T, 
+    main = "Logistic Regression Full")
+plot.roc(socialnetwork$Purchased[-train.i], glm2pre, print.auc= T, 
+    main = "Logistic Regression No Gender")
+```
+
+```{r}
+decisionplot <- function(model, data ,class = NULL, predict_type = "class",
+                         resolution = 100, showgrid = TRUE){
+  if (!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,c(2,3)]
+  k <- length(unique(cl))
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L)
+  
+  r <- sapply(data, range, na.rm = T)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each = resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+  p <- predict(model, g, type = predict_type)
+  if (is.list(p)) p <- p$class
+  p <- as.factor(p)
+  if (showgrid) points(g, col = as.integer(p)+1L, pch=".")
+  z <- matrix(as.integer(p), nrow = resolution, byrow = T)
+  contour(xs, ys, z, add = T, drawlabels = F, lwd= 2, levels = (1:(k-1))+0.5)
+  invisible(z)
+}
+```
+
+```{r, include=T,out.height="65%", out.width="50%"}
+par(mfrow=c(1,2))
+invisible(capture.output(qqPlot(socialnetwork$Age[socialnetwork$Purchased==1], xlab = "Theoretical Quantiles ",
+       ylab = "Sample Quantiles ", main ="Age, purchased")))
+
+invisible(capture.output(qqPlot(socialnetwork$EstimatedSalary[socialnetwork$Purchased==1], xlab = "Theoretical Quantiles ",
+       ylab = "Sample Quantiles ", main ="EstimatedSalary, purchased")))
+
+invisible(capture.output(qqPlot(socialnetwork$Age[socialnetwork$Purchased==0], xlab = "Theoretical Quantiles ",
+       ylab = "Sample Quantiles ", main ="Age, not purchased")))
+
+invisible(capture.output(qqPlot(socialnetwork$EstimatedSalary[socialnetwork$Purchased==0], xlab = "Theoretical Quantiles ",
+       ylab = "Sample Quantiles ", main ="EstimatedSalary, not purchased")))
+
+```
+
+```{r,include=T,out.height="65%", out.width="65%", fig.align='center'}
+par(mfrow=c(1,2))
+invisible(capture.output(mvn(cbind(socialnetwork$Age[socialnetwork$Purchased==1],
+          socialnetwork$EstimatedSalary[socialnetwork$Purchased==1]),
+    multivariatePlot="qq")))
+invisible(capture.output(mvn(cbind(socialnetwork$Age[socialnetwork$Purchased==0],
+          socialnetwork$EstimatedSalary[socialnetwork$Purchased==0]),
+    multivariatePlot="qq")))
+```
+
+```{r, include=T,out.height="30%", out.width="65%", fig.align='center'}
+lda.fit = lda(Purchased ~ Age+EstimatedSalary, data=socialnetwork, subset = train.i)
+lda.pred = predict(lda.fit,  socialnetwork[-train.i,][,-4])$class
+lda.pred.prob = predict(lda.fit,  socialnetwork[-train.i,][,-4])$posterior[,2]
+lda.error = mean(lda.pred != socialnetwork$Purchased[-train.i])
+draw_confusion_matrix(confusionMatrix(lda.pred, factor(socialnetwork$Purchased[-train.i])))
+```
+
+```{r, include=T,out.height="60%", out.width="60%", fig.align='center'}
+decisionplot(lda.fit, data = socialnetwork[train.i,], class = "Purchased")
+title("Decisionplot for LDA")
+```
+
+```{r, include=T,out.height="30%", out.width="65%", fig.align='center'}
+qda.fit = qda(Purchased ~ Age+EstimatedSalary, data=socialnetwork, subset = train.i)
+qda.pred = predict(qda.fit,  socialnetwork[-train.i,][,-4])$class
+qda.pred.prob = predict(qda.fit,  socialnetwork[-train.i,][,-4])$posterior[,2]
+qda.error = mean(qda.pred != socialnetwork$Purchased[-train.i])
+draw_confusion_matrix(confusionMatrix(qda.pred, factor(socialnetwork$Purchased[-train.i])))
+```
+
+```{r, include=T,out.height="60%", out.width="60%", fig.align='center'}
+decisionplot(qda.fit, data = socialnetwork[train.i,], class = "Purchased")
+title("Decisionplot for QDA")
+```
+
+```{r}
+nb.fit=naiveBayes(Purchased ~ Age+EstimatedSalary,data=socialnetwork,subset=train.i)
+```
+
+```{r, include=T, fig.align='center',out.height="30%", out.width="65%"}
+nb.class=predict(nb.fit,socialnetwork)[-train.i]
+nb.class.prob=predict(nb.fit,socialnetwork, type= c("raw"))[-train.i,2]
+nb.error = mean(nb.class != socialnetwork$Purchased[-train.i])
+draw_confusion_matrix(confusionMatrix(nb.class, factor(socialnetwork$Purchased[-train.i])))
+```
+```{r, include=T,out.height="60%", out.width="60%", fig.align='center'}
+decisionplot(nb.fit, data = socialnetwork[train.i,], class = "Purchased")
+title("Decisionplot for Naive Bayes")
+```
+
+```{r, include=T,out.height="65%", out.width="65%", fig.align='center'}
+set.seed(441)
+fivefoldcv = matrix(NA, 5, 10)
+randomseq = c(1:nrow(socialnetwork))[order(runif(nrow(socialnetwork)))]
+fold = c(1:nrow(socialnetwork) %% 5 + 1)
+for (i in 1:5){
+  train = randomseq[fold!=i]
+  train.X = socialnetwork[,1:3][train,]
+  test.X = socialnetwork[,1:3][-train,]
+  train.y = socialnetwork[,4][train]
+  test.y = socialnetwork[,4][-train]
+  for (j in 1:10){
+    knn.pred = knn(train.X, test.X, train.y, k=j)
+    fivefoldcv[i,j]=mean(knn.pred!=test.y)
+  }
+}
+fivefold=apply(fivefoldcv, MARGIN=2, FUN=mean)
+plot(fivefold,type ="b",main="MSE vs k nearest neighbour", 
+     xlab = "k nearest neighbour", ylab = "MSE")
+```
+
+```{r, include=T, fig.align='center',out.height="30%", out.width="65%"}
+knn.pred = knn(socialnetwork[train.i,-4], socialnetwork[-train.i,-4], socialnetwork$Purchased[train.i], k=6)
+knn.pred.prob = knn(socialnetwork[train.i,-4], socialnetwork[-train.i,-4], socialnetwork$Purchased[train.i], k=6, prob=T)
+knn.error = mean(knn.pred != socialnetwork$Purchased[-train.i])
+draw_confusion_matrix(confusionMatrix(knn.pred, factor(socialnetwork$Purchased[-train.i])))
+```
+
+```{r, include=T, message=F,out.height="65%", out.width="65%", fig.align='center'}
+par(mfrow=c(2,2))
+plot.roc(socialnetwork$Purchased[-train.i], lda.pred.prob, print.auc= T,main = "LDA")
+plot.roc(socialnetwork$Purchased[-train.i], qda.pred.prob, print.auc= T,main = "QDA")
+plot.roc(socialnetwork$Purchased[-train.i], nb.class.prob, print.auc= T,main = "Naive Bayes")
+plot.roc(socialnetwork$Purchased[-train.i], attr(knn.pred.prob,"prob"), print.auc= T,main = "KNN")
+```
+
+```{r, include=T,out.height="30%", out.width="65%", fig.align='center'}
+CART <- tree(as.factor(Purchased)~., data = socialnetwork, subset = train.i, split = "gini")
+tree.pre  <- predict(CART,socialnetwork[-train.i,], type = "class")
+
+draw_confusion_matrix(confusionMatrix(tree.pre, factor(socialnetwork$Purchased[-train.i])))
+```
+
+```{r, include=T,out.height="65%", out.width="65%", fig.align='center'}
+set.seed(441)
+result <- cv.tree(CART, FUN = prune.tree, K=5)
+par(mfrow=c(1,2))
+plot(result$size, result$dev, type="b", xlab="size", ylab="deviance",
+     main ="Plot of deviance vs size of tree")
+plot(result$k, result$dev, type="b", xlab="k", ylab="deviance" ,
+     main = "Plot of deviance vs k of tree ")
+
+new.tree <- prune.tree(CART, best=result$size[which.min(result$dev)])
+par(mfrow=c(1,1))
+```
+
+```{r, include=T,out.height="60%", out.width="60%",fig.align='center'}
+plot(new.tree)
+text(new.tree)
+```
+
+```{r, include=T,out.height="30%", out.width="65%",fig.align='center'}
+tree.pre  <- predict(new.tree,socialnetwork[-train.i,], type = "class")
+draw_confusion_matrix(confusionMatrix(tree.pre, factor(socialnetwork$Purchased[-train.i])))
+```
+
+```{r}
+mean(tree.pre != socialnetwork[-train.i,]$Purchased)
+```
+
+```{r, include=T,out.height="30%", out.width="65%", fig.align='center'}
+set.seed(441)
+bagging <- randomForest(as.factor(Purchased)~., data=socialnetwork[train.i,], mtry=3, ntree = 200, 
+             importance = T, xtest=socialnetwork[-train.i,][,-4], 
+             ytest=factor(socialnetwork$Purchased[-train.i]), keep.forest=T)
+draw_confusion_matrix(confusionMatrix(bagging$test$predicted, factor(socialnetwork$Purchased[-train.i])))
+#bagging
+```
+
+```{r, include=T,out.height="30%", out.width="65%", fig.align='center'}
+set.seed(441)
+rf2 <- randomForest(as.factor(Purchased)~., data=socialnetwork[train.i,], mtry=2, ntree = 200, 
+             importance = T, xtest=socialnetwork[-train.i,][,-4], 
+             ytest=factor(socialnetwork$Purchased[-train.i]), keep.forest=T)
+draw_confusion_matrix(confusionMatrix(rf2$test$predicted, factor(socialnetwork$Purchased[-train.i])))
+#rf2
+```
+
+```{r, include=T,out.height="65%", out.width="50%"}
+varImpPlot(bagging, main = "Variable Importance of Bagging")
+varImpPlot(rf2, main = "Variable Importance of Random Forest")
+```
+
+```{r}
+set.seed(441)
+boosting <- gbm(as.numeric(Purchased)~., data= socialnetwork[train.i, ], distribution="bernoulli", 
+    n.trees=2000, interaction.depth = 2, shrinkage = 0.01, cv.folds = 5 )
+```
+
+```{r, include=T,out.height="65%", out.width="65%", fig.align='center'}
+ntree <- gbm.perf(boosting, method = "cv")
+preboosting <- predict(boosting, n.tree = ntree, newdata=socialnetwork[-train.i, ], type = "response")
+pred.class.boosting <- ifelse(preboosting >= 0.5, 1,0)
+```
+
+```{r, include=T,out.height="30%", out.width="65%", fig.align='center'}
+draw_confusion_matrix(confusionMatrix(factor(pred.class.boosting), factor(socialnetwork$Purchased[-train.i])))
+```
+
+```{r}
+mean(pred.class.boosting != socialnetwork[-train.i,]$Purchased)
+```
+
+```{r}
+pretree <- predict(new.tree, socialnetwork[-train.i,])[,2]
+predbag <- predict(bagging, newdata = socialnetwork[-train.i,],type="prob")[,2]
+prerf2 <- predict(rf2, newdata = socialnetwork[-train.i,],type="prob")[,2]
+```
+
+```{r, include=T, message=F,out.height="65%", out.width="65%", fig.align='center'}
+par(mfrow=c(2,2))
+plot.roc(socialnetwork$Purchased[-train.i], pretree, print.auc= T,main="Simple Tree")
+plot.roc(socialnetwork$Purchased[-train.i], predbag, print.auc= T,main="Bagging")
+plot.roc(socialnetwork$Purchased[-train.i], prerf2, print.auc= T,main="Random Forest")
+plot.roc(socialnetwork$Purchased[-train.i], preboosting, print.auc= T,main="Boosting")
+```
+
+```{r}
+name <- c("Logistic Regression", "LDA", "QDA", "Naive Bayes", "KNN", "Single Tree with Pruning", "Bagging", "Random Forest", "**Boosting**")
+test_error <- c("16.25%", "18.75%","12.5%", "13.75%","20%","7.5%","11.25%","10%","**10%**")
+AUC <- c("0.918", "0.909", "0.961", "0.951", "0.689", "0.907", "0.928", "0.932", "**0.961**")
+con_ds <- data.frame(Model_Names = name, Test_Error = test_error, AUC = AUC)
+```
+
+```{r,include=T}
+knitr::kable(con_ds)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
